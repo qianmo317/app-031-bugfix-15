@@ -4,9 +4,10 @@ import { useRoute } from 'vue-router'
 import { getJob, runNest, applyAdjustment, registerOffcuts, useStore } from '../lib/store'
 import { toast } from '../lib/ui'
 import { printJob } from '../lib/print'
-import { pct, money } from '../lib/format'
+import { pct, money, meters, areaM2 } from '../lib/format'
 import SheetDiagram from '../components/SheetDiagram.vue'
 import { cabinetFill, cabinetStroke } from '../lib/colors'
+import { overallUtilization, totalEdgeMeters } from '../lib/stats'
 
 const route = useRoute()
 const job = computed(() => getJob(route.params.id as string))
@@ -17,12 +18,8 @@ const sheet = computed(() => result.value?.sheets[activeSheet.value])
 const adjustMode = ref(false)
 const selectedId = ref<string | null>(null)
 
-const overallUtil = computed(() => {
-  if (!result.value || result.value.sheets.length === 0) return 0
-  const used = result.value.sheets.reduce((a, s) => a + s.usedAreaMm2, 0)
-  const total = result.value.sheets.reduce((a, s) => a + s.boardAreaMm2, 0)
-  return total > 0 ? used / total : 0
-})
+const overallUtil = computed(() => overallUtilization(result.value))
+const edge = computed(() => totalEdgeMeters(result.value))
 const cabinets = computed(() => {
   const set = new Set<string>()
   result.value?.sheets.forEach((s) => s.placements.forEach((p) => set.add(p.cabinet)))
@@ -102,7 +99,7 @@ function onDrop(payload: { instanceId: string; xMm: number; yMm: number }): void
     other.x = ax
     other.y = ay
   } else {
-    const oc = sheet.value.offcuts.find(
+    const oc = sheet.value.offcuts?.find(
       (o) =>
         payload.xMm >= o.x - TOL &&
         payload.yMm >= o.y - TOL &&
@@ -146,7 +143,7 @@ function printNest(): void {
     <section class="panel kpi-bar">
       <div><b>{{ result.boardsUsed }}</b><span>板材（张）</span></div>
       <div><b>{{ pct(overallUtil) }}</b><span>综合利用率</span></div>
-      <div><b>{{ (result.edgeBandM.exposed + result.edgeBandM.normal).toFixed(1) }}m</b><span>封边总长</span></div>
+      <div><b>{{ meters(edge.total) }}m</b><span>封边总长</span></div>
       <div class="hl"><b>省 {{ result.savedBoards }} 张</b><span>约 {{ money(result.savedCents) }}</span></div>
       <div class="spacer" />
       <button class="sm" @click="rerun">重新排样</button>
@@ -234,15 +231,15 @@ function printNest(): void {
           </div>
         </div>
         <h4 style="margin-top: 12px">可用余料</h4>
-        <p v-if="(sheet?.offcuts.filter((o) => o.usable).length ?? 0) === 0" class="small muted">
+        <p v-if="(sheet?.offcuts?.filter((o) => o.usable).length ?? 0) === 0" class="small muted">
           本板没有 ≥300×300mm 的余料
         </p>
         <div
-          v-for="(o, i) in sheet?.offcuts.filter((x) => x.usable) ?? []"
+          v-for="(o, i) in sheet?.offcuts?.filter((x) => x.usable) ?? []"
           :key="i"
           class="oc-row"
         >
-          <span>{{ o.wMm }}×{{ o.hMm }}mm · {{ (o.areaMm2 / 1e6).toFixed(2) }}m²</span>
+          <span>{{ o.wMm }}×{{ o.hMm }}mm · {{ areaM2(o.areaMm2) }}</span>
           <span v-if="registered(sheet!.index, o)" class="tag good">已登记</span>
         </div>
         <button class="sm" style="margin-top: 8px" @click="registerSheet(sheet!.index)">

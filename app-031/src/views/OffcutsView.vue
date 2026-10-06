@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useStore, removeOffcut, toggleOffcut, addManualOffcut } from '../lib/store'
 import { toast } from '../lib/ui'
+import { areaM2 } from '../lib/format'
 
 const { state } = useStore()
 const showForm = ref(false)
@@ -38,7 +39,7 @@ function del(id: string): void {
       <div>
         <h1 style="font-size: 19px">余料登记与再利用</h1>
         <p class="muted" style="margin: 6px 0 0">
-          当前 {{ availCount }} 块可用，合计 {{ (availArea / 1e6).toFixed(2) }}m²。
+          当前 {{ availCount }} 块可用，合计 {{ areaM2(availArea) }}。
           在零件清单页勾选后，余料会作为小板材优先参与下一轮排样。
         </p>
       </div>
@@ -72,7 +73,7 @@ function del(id: string): void {
             </td>
             <td><b>{{ o.wMm }}×{{ o.hMm }}</b></td>
             <td>{{ o.thicknessMm }}mm {{ o.material }}</td>
-            <td>{{ (o.wMm * o.hMm / 1e6).toFixed(2) }}m²</td>
+            <td>{{ areaM2(o.wMm * o.hMm) }}</td>
             <td>{{ o.jobName }}（第 {{ o.sheetIndex + 1 }} 张）</td>
             <td>{{ new Date(o.createdAt).toLocaleDateString('zh-CN') }}</td>
             <td>

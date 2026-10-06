@@ -15,6 +15,7 @@ import type {
 import { EPS, type Rect } from './geometry'
 import { buildSteps, simulate } from './cuts'
 import type { DSeg } from './cuts'
+import { edgeMetersOf } from './stats'
 
 interface Inst {
   part: Part
@@ -345,20 +346,9 @@ export function nestJob(job: Job): NestResult {
     boardsByType[s.boardName] = (boardsByType[s.boardName] ?? 0) + 1
     totalCost += s.priceCents
   }
-  let exposedM = 0
-  let normalM = 0
-  for (const s of results) {
-    for (const pl of s.placements) {
-      const m =
-        (pl.origLen *
-          ((pl.edgeBands.includes('top') ? 1 : 0) + (pl.edgeBands.includes('bottom') ? 1 : 0)) +
-          pl.origWid *
-            ((pl.edgeBands.includes('left') ? 1 : 0) + (pl.edgeBands.includes('right') ? 1 : 0))) /
-        1000
-      if (pl.exposed) exposedM += m
-      else normalM += m
-    }
-  }
+  // 封边米数：按零件实际净尺寸逐边累加（与统计页/下料单共用 stats.ts 同一函数）
+  const allPlacements = results.flatMap((s) => s.placements)
+  const { exposed: exposedM, normal: normalM } = edgeMetersOf(allPlacements)
 
   const unplacedList: UnplacedInfo[] = [...unplaced.values()].map((u) => ({
     partId: u.part.id,
@@ -396,10 +386,7 @@ export function nestJob(job: Job): NestResult {
     sheets: results,
     boardsUsed: optimizedBoards,
     boardsByType,
-    edgeBandM: {
-      exposed: Math.round(exposedM * 100) / 100,
-      normal: Math.round(normalM * 100) / 100
-    },
+    edgeBandM: { exposed: exposedM, normal: normalM },
     unplaced: unplacedList,
     baselineBoards,
     savedBoards,

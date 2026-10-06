@@ -5,6 +5,7 @@ import { nestJob } from './packing'
 import { rebuildFromPlacements } from './cuts'
 import { guillotineViolation } from './geometry'
 import { uid } from './format'
+import { edgeMetersOf, OFFCUT_MIN_MM } from './stats'
 import boardsData from '../data/boards.json'
 
 const JOBS_KEY = 'fco.jobs.v1'
@@ -43,7 +44,55 @@ function init(): void {
   if (state.loaded) return
   state.jobs = load<Job[]>(JOBS_KEY, [])
   state.offcuts = load<RegisteredOffcut[]>(OFFCUTS_KEY, [])
+  // 兼容早先版本存在本机的结果：缺字段时按默认值补齐，打开统计页/打印不空掉
+  state.jobs.forEach(migrateJob)
   state.loaded = true
+}
+
+/**
+ * 旧排样结果兼容：补齐后增的可选字段，缺什么补什么：
+ * - sheet.offcuts 缺失 → 空列表（该板没有留档余料，统计按 0 块接着汇总）
+ * - offcut.usable / areaMm2 缺失 → 按 ≥300×300mm 门槛与尺寸现算
+ * - sheet.adjusted / placement.adjusted 缺失 → false（未经手工微调）
+ * - result.edgeBandM 缺失 → 按就位零件的实际净尺寸现算（与新内核同口径）
+ */
+function migrateJob(job: Job): void {
+  const r = job.result as NestResult | undefined
+  if (!r) return
+  if (!Array.isArray(r.sheets)) {
+    job.result = undefined
+    return
+  }
+  let needEdge = false
+  for (const s of r.sheets) {
+    if (!Array.isArray(s.offcuts)) s.offcuts = []
+    for (const o of s.offcuts) {
+      if (o.areaMm2 === undefined) o.areaMm2 = Math.round(o.wMm * o.hMm)
+      if (o.usable === undefined) o.usable = o.wMm >= OFFCUT_MIN_MM && o.hMm >= OFFCUT_MIN_MM
+      if (o.x === undefined) o.x = 0
+      if (o.y === undefined) o.y = 0
+    }
+    if (s.adjusted === undefined) s.adjusted = false
+    for (const p of s.placements ?? []) {
+      if (p.adjusted === undefined) p.adjusted = false
+    }
+  }
+  if (!r.edgeBandM || typeof r.edgeBandM.exposed !== 'number') needEdge = true
+  if (needEdge) r.edgeBandM = edgeMetersOf(r.sheets.flatMap((s) => s.placements ?? []))
+  if (typeof r.boardsUsed !== 'number') r.boardsUsed = r.sheets.length
+  if (!r.boardsByType) {
+    r.boardsByType = {}
+    for (const s of r.sheets) r.boardsByType[s.boardName] = (r.boardsByType[s.boardName] ?? 0) + 1
+  }
+  if (typeof r.totalCostCents !== 'number')
+    r.totalCostCents = r.sheets.reduce((a, s) => a + (s.priceCents ?? 0), 0)
+  if (!Array.isArray(r.unplaced)) r.unplaced = []
+  if (typeof r.baselineBoards !== 'number') r.baselineBoards = r.sheets.length
+  if (typeof r.savedBoards !== 'number') r.savedBoards = 0
+  if (typeof r.savedCents !== 'number') r.savedCents = 0
+  if (!Array.isArray(r.stockShortage)) r.stockShortage = []
+  if (typeof r.elapsedMs !== 'number') r.elapsedMs = 0
+  if (typeof r.generatedAt !== 'number') r.generatedAt = job.createdAt ?? 0
 }
 
 export function defaultBoards(): Board[] {

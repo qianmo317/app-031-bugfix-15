@@ -2,47 +2,31 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { getJob } from '../lib/store'
-import boardsData from '../data/boards.json'
-import { pct, money } from '../lib/format'
+import { money, areaM2, pct, meters } from '../lib/format'
+import {
+  totalPieces,
+  totalPartAreaMm2,
+  totalEdgeMeters,
+  hardwareRows,
+  usableOffcuts,
+  overallUtilization,
+  utilizationRange
+} from '../lib/stats'
 
 const route = useRoute()
 const job = computed(() => getJob(route.params.id as string))
 const result = computed(() => job.value?.result)
 
-const totalPieces = computed(
-  () => result.value?.sheets.reduce((a, s) => a + s.placements.length, 0) ?? 0
-)
-const totalEdgeM = computed(
-  () => (result.value?.edgeBandM.exposed ?? 0) + (result.value?.edgeBandM.normal ?? 0)
-)
-const hardware = computed(() => {
-  const h = boardsData.hardware
-  const n = totalPieces.value
-  return [
-    { name: h.connectorName, value: n * h.connectorPerPart, unit: '套' },
-    { name: h.dowelName, value: n * h.dowelPerPart, unit: '个' },
-    { name: h.screwName, value: n * h.screwPerPart, unit: '颗' }
-  ]
-})
+const pieces = computed(() => totalPieces(result.value))
+const partAreaMm2 = computed(() => totalPartAreaMm2(result.value))
+const edge = computed(() => totalEdgeMeters(result.value))
+const hardware = computed(() => hardwareRows(result.value))
 
-const usableOffcuts = computed(() => {
-  const all = (result.value?.sheets[0]?.offcuts ?? [])
-    .filter((o) => o.usable)
-    .map((o) => ({ ...o, sheet: 1 }))
-  return { list: all, area: all.reduce((a, o) => a + o.areaMm2, 0) }
-})
+// 可再利用余料：每张板上的都算，再汇总块数与合计面积（与下料单同一函数）
+const usable = computed(() => usableOffcuts(result.value))
 
-const overallUtil = computed(() => {
-  if (!result.value || result.value.sheets.length === 0) return 0
-  const used = result.value.sheets.reduce((a, s) => a + s.usedAreaMm2, 0)
-  const total = result.value.sheets.reduce((a, s) => a + s.boardAreaMm2, 0)
-  return total > 0 ? used / total : 0
-})
-const utilMinMax = computed(() => {
-  const us = result.value?.sheets.map((s) => s.utilization) ?? []
-  if (us.length === 0) return { min: 0, max: 0 }
-  return { min: Math.min(...us), max: Math.max(...us) }
-})
+const overallUtil = computed(() => overallUtilization(result.value))
+const utilMinMax = computed(() => utilizationRange(result.value))
 </script>
 
 <template>
@@ -96,15 +80,15 @@ const utilMinMax = computed(() => {
         <h3>封边（按实际零件边长）</h3>
         <div class="edge-bars">
           <div class="edge-box">
-            <b>{{ result.edgeBandM.exposed.toFixed(2) }} m</b>
+            <b>{{ meters(edge.exposed) }} m</b>
             <span>见光边</span>
           </div>
           <div class="edge-box">
-            <b>{{ result.edgeBandM.normal.toFixed(2) }} m</b>
+            <b>{{ meters(edge.normal) }} m</b>
             <span>非见光边</span>
           </div>
           <div class="edge-box total">
-            <b>{{ totalEdgeM.toFixed(2) }} m</b>
+            <b>{{ meters(edge.total) }} m</b>
             <span>合计</span>
           </div>
         </div>
@@ -118,30 +102,36 @@ const utilMinMax = computed(() => {
             <tr v-for="(h, i) in hardware" :key="i">
               <td>{{ h.name }}</td>
               <td style="text-align: right; font-variant-numeric: tabular-nums">
-                {{ h.value }} {{ h.unit }}
+                {{ h.amount.toFixed(h.decimals) }}{{ h.unit ? ' ' + h.unit : '' }}
               </td>
             </tr>
           </tbody>
         </table>
-        <p class="small muted">共 {{ totalPieces }} 件零件。</p>
+        <p class="small muted">
+          共 {{ pieces }} 件零件，合计净面积 {{ areaM2(partAreaMm2) }}；
+          热熔胶按 {{ edge.total.toFixed(2) }}m 封边折算。
+        </p>
       </section>
 
       <section class="panel">
         <h3>可再利用余料（≥300×300mm）</h3>
-        <p>{{ usableOffcuts.list.length }} 块，合计 {{ (usableOffcuts.area / 1e6).toFixed(2) }}m²</p>
+        <p>{{ usable.count }} 块，合计 {{ areaM2(usable.areaMm2) }}（每张板上的余料均计入）</p>
         <table class="grid">
           <thead>
             <tr><th>所在板</th><th>尺寸(mm)</th><th>面积</th></tr>
           </thead>
           <tbody>
-            <tr v-for="(o, i) in usableOffcuts.list.slice(0, 8)" :key="i">
+            <tr v-for="(o, i) in usable.list.slice(0, 8)" :key="i">
               <td>第 {{ o.sheet }} 张</td>
               <td>{{ o.wMm }}×{{ o.hMm }}</td>
-              <td>{{ (o.areaMm2 / 1e6).toFixed(2) }}m²</td>
+              <td>{{ areaM2(o.areaMm2) }}</td>
             </tr>
           </tbody>
         </table>
-        <router-link v-if="usableOffcuts.list.length > 0" :to="`/nest/${job.id}`" class="small">
+        <p v-if="usable.list.length > 8" class="small muted">
+          仅预览前 8 块，其余 {{ usable.list.length - 8 }} 块已计入上方合计；完整清单见下料单。
+        </p>
+        <router-link v-if="usable.list.length > 0" :to="`/nest/${job.id}`" class="small">
           去排样页一键登记余料 →
         </router-link>
       </section>

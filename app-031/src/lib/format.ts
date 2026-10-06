@@ -1,23 +1,40 @@
-// 通用工具：ID、金额、面积格式化、文件下载、CSV 解析
+// 通用工具：ID、金额、尺寸格式化、文件下载、CSV 解析
+//
+// 全应用统一的单位与精度（统计页、下料单、标签、排样页必须一致，不许一处一套）：
+// - 金额：内部一律以「分」(cents) 记账，展示时除以 100 折算为「元」，四舍五入保留 2 位小数。
+// - 尺寸：内部以「毫米」(mm) 为单位（允许 3.2mm 锯路这类中间量带小数），
+//   打印/标签/单据展示时四舍五入取整到整毫米，不带小数。
+// - 面积：内部以「平方毫米」(mm²) 累计，展示时除以 1,000,000 折算为「平方米」，保留 2 位小数。
+// - 利用率/百分比：内部为 0~1 的比率，展示乘以 100 后保留 1 位小数。
+// - 封边长度：内部以「米」累计（由毫米边长除以 1000），展示保留 2 位小数。
 
 export function uid(prefix = 'id'): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+/** 金额：分 → 元，四舍五入保留 2 位小数。 */
 export function money(cents: number): string {
-  return `¥${cents / 100}`
+  return `¥${(cents / 100).toFixed(2)}`
 }
 
+/** 尺寸：毫米四舍五入取整（标签与单据上不允许出现小数毫米）。 */
 export function mm(v: number): string {
-  return `${v.toFixed(2)}`
+  return `${Math.round(v)}`
 }
 
+/** 面积：平方毫米 → 平方米，保留 2 位小数。 */
 export function areaM2(mm2: number): string {
-  return `${mm2 / 1_000_000}m²`
+  return `${(mm2 / 1_000_000).toFixed(2)}m²`
 }
 
+/** 封边长度：米，保留 2 位小数。 */
+export function meters(m: number): string {
+  return `${m.toFixed(2)}`
+}
+
+/** 利用率/百分比：0~1 的比率 → 一位小数百分比。 */
 export function pct(v: number): string {
-  return `${v * 100}%`
+  return `${(v * 100).toFixed(1)}%`
 }
 
 export function clamp(v: number, lo: number, hi: number): number {

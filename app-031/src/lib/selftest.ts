@@ -1,10 +1,19 @@
 // 自动化断言（规格书 §8/§10 强制）：
 // guillotine 100 组随机零反例、纹理零旋转、锯路/修边、守恒、封边复算、
 // 30 零件锯切工步 ≤20 且模拟器还原、余料再利用、300 零件性能 <1.5s。
-import type { Board, Job, Part } from '../types'
+import type { Board, Job, NestResult, Part, SheetResult } from '../types'
 import { nestJob } from './packing'
 import { simulate, countSawOps } from './cuts'
 import { guillotineViolation, type Rect } from './geometry'
+import {
+  cabinetOrderGroups,
+  edgeMetersOf,
+  glueWeightKg,
+  totalEdgeMeters,
+  totalPieces,
+  totalPartAreaMm2,
+  usableOffcuts
+} from './stats'
 
 export interface CheckResult {
   name: string
@@ -439,6 +448,88 @@ export function runSelfTest(): SelfTestReport {
       ok,
       `18mm 用 ${thickSheets} 张（库存 1，需补采）、9mm 用 ${thinSheets} 张`
     )
+  }
+
+  // 10) 余料跨每张板汇总 + 件数/面积一致 + 明细按柜并号 + 胶量同口径
+  {
+    const thick = makeBoard({ id: 't10', name: '厚板 2440×1220×18', wMm: 2440, hMm: 1220 })
+    const thin = makeBoard({ id: 'b10', name: '薄板 2440×1220×9', wMm: 2440, hMm: 1220, thicknessMm: 9, priceCents: 9800 })
+    const job = makeJob(
+      [
+        // 厚板柜：同件号 2 件，应并成一行数量 2；薄板柜也有同件号 X1（跨柜保留两行）
+        makePart({ code: 'A10', name: '层板', lenMm: 600, widMm: 600, qty: 2, cabinet: '柜A', boardId: 't10' }),
+        makePart({ code: 'X10', name: '共用件', lenMm: 600, widMm: 600, qty: 1, cabinet: '柜A', boardId: 't10' }),
+        makePart({ code: 'X10', name: '共用件', lenMm: 600, widMm: 600, qty: 1, cabinet: '柜B', boardId: 'b10' }),
+        makePart({ code: 'B10', name: '薄板件', lenMm: 600, widMm: 600, qty: 1, cabinet: '柜B', boardId: 'b10' })
+      ],
+      { boards: [thick, thin] }
+    )
+    const r = nestJob(job)
+    const expectPieces = 5
+    const expectArea = 5 * 600 * 600
+    const directUsable = r.sheets.flatMap((s, i) =>
+      s.offcuts.filter((o) => o.usable).map((o) => ({ sheet: i + 1, areaMm2: o.areaMm2 }))
+    )
+    const u = usableOffcuts(r)
+    const offcutOk =
+      u.count === directUsable.length &&
+      u.areaMm2 === directUsable.reduce((a, o) => a + o.areaMm2, 0) &&
+      new Set(u.list.map((o) => o.sheet)).size >= 2 && // 第一张板之后的板上余料也进了汇总
+      directUsable.length >= 2
+    const groups = cabinetOrderGroups(r)
+    const rowQty = groups.reduce((a, g) => a + g.rows.reduce((b, row) => b + row.qty, 0), 0)
+    const mergedRow = groups.find((g) => g.cabinet === '柜A')?.rows.find((row) => row.code === 'A10')
+    const crossRows = groups.reduce(
+      (n, g) => n + g.rows.filter((row) => row.code === 'X10').length,
+      0
+    )
+    const groupOk =
+      groups.length === 2 &&
+      rowQty === expectPieces && // 并组后数量合计 = 就位件数
+      mergedRow?.qty === 2 && // 同柜同件号并成一行、数量为 2
+      crossRows === 2 // 同件号跨两柜保留两行（路线 A）
+    const piecesOk =
+      totalPieces(r) === expectPieces && totalPartAreaMm2(r) === expectArea
+    const e = totalEdgeMeters(r)
+    const glueOk = Math.abs(glueWeightKg(r) - (e.total * 60) / 1000) < 1e-9
+    const ok = offcutOk && groupOk && piecesOk && glueOk
+    add(
+      '余料每张板汇总/件数面积/明细按柜并号/胶量同口径',
+      ok,
+      `余料 ${u.count} 块跨 ${new Set(u.list.map((o) => o.sheet)).size} 张共 ${(u.areaMm2 / 1e6).toFixed(2)}m²；` +
+        `柜组 ${groups.length} 个、并组后 ${rowQty} 件（期望 ${expectPieces}）；` +
+        `胶 ${glueWeightKg(r).toFixed(2)}kg`
+    )
+  }
+
+  // 11) 旧版本存机结果缺 offcuts/adjusted/edgeBandM 等字段：兼容接着算，不空掉
+  {
+    const job = makeJob([
+      makePart({ code: 'L1', lenMm: 500, widMm: 300, qty: 2, edgeBands: ['top', 'left'] })
+    ])
+    const r = nestJob(job)
+    // 模拟旧数据：删掉后增字段
+    for (const s of r.sheets) {
+      delete (s as Partial<SheetResult>).offcuts
+      delete (s as Partial<SheetResult>).adjusted
+      for (const p of s.placements) delete (p as { adjusted?: boolean }).adjusted
+    }
+    delete (r as Partial<NestResult>).edgeBandM
+    let crashed = false
+    let u = { count: -1, areaMm2: -1 }
+    let groupsOk = false
+    let edgeRecomputed = false
+    try {
+      u = usableOffcuts(r)
+      const groups = cabinetOrderGroups(r)
+      groupsOk = groups[0]?.rows[0]?.qty === 2
+      const m = edgeMetersOf(r.sheets.flatMap((s) => s.placements ?? []))
+      edgeRecomputed = m.normal === Math.round(((0.5 + 0.3) * 2) * 100) / 100
+    } catch {
+      crashed = true
+    }
+    const ok = !crashed && u.count === 0 && u.areaMm2 === 0 && groupsOk && edgeRecomputed
+    add('旧结果缺可用余料/已微调/封边字段时按默认值兼容', ok, ok ? '缺字段结果可正常汇总' : '兼容处理失败')
   }
 
   const elapsedMs = Math.round(performance.now() - t0)

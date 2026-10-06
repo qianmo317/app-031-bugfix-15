@@ -2,48 +2,40 @@
 import { computed } from 'vue'
 import { printState } from '../lib/print'
 import { getJob } from '../lib/store'
-import boardsData from '../data/boards.json'
 import SheetDiagram from './SheetDiagram.vue'
-import { money, mm } from '../lib/format'
+import { money, mm, areaM2, meters } from '../lib/format'
+import {
+  totalPieces,
+  totalPartAreaMm2,
+  totalEdgeMeters,
+  hardwareRows,
+  usableOffcuts,
+  cabinetOrderGroups,
+  GLUE_GRAM_PER_EDGE_METER
+} from '../lib/stats'
 
 const job = computed(() => (printState.jobId ? getJob(printState.jobId) : undefined))
 const sections = computed(() => new Set(printState.sections))
 const now = computed(() => new Date().toLocaleString('zh-CN'))
 
-const allInstances = computed(() => {
-  if (!job.value?.result) return []
-  return job.value.result.sheets.flatMap((s) => s.placements)
-})
+const result = computed(() => job.value?.result)
 
-interface OrderRow {
-  code: string
-  name: string
-  origLen: number
-  origWid: number
-  qty: number
-  grain: string
-  edgeCount: number
-  exposed: boolean
-}
-const cabinetGroups = computed(() => {
-  const list: OrderRow[] = allInstances.value.map((p) => ({
-    code: p.code,
-    name: p.name,
-    origLen: p.origLen,
-    origWid: p.origWid,
-    qty: 1,
-    grain: p.grain,
-    edgeCount: p.edgeBands.length,
-    exposed: p.exposed
-  }))
-  return [['全部柜体', list] as [string, OrderRow[]]]
-})
+// 标签：每块就位零件一张，件数与统计页/下料单完全一致
+const allInstances = computed(() => result.value?.sheets.flatMap((s) => s.placements) ?? [])
+
+// 下料单零件明细：按柜体分组、柜内按件号并数量（分组口径见 stats.ts 注释，全应用唯一）
+const cabinetGroups = computed(() => cabinetOrderGroups(result.value))
+const pieces = computed(() => totalPieces(result.value))
+const partAreaMm2 = computed(() => totalPartAreaMm2(result.value))
+const edge = computed(() => totalEdgeMeters(result.value))
+const hardware = computed(() => hardwareRows(result.value))
+const usable = computed(() => usableOffcuts(result.value))
 
 const grainText = (g: string): string =>
   g === 'length' ? '竖纹' : g === 'width' ? '横纹' : '无要求'
 
 const boardByName = (name: string) =>
-  job.value?.result?.sheets.find((x) => x.boardName === name)
+  result.value?.sheets.find((x) => x.boardName === name)
 </script>
 
 <template>
@@ -143,40 +135,69 @@ const boardByName = (name: string) =>
           </tfoot>
         </table>
 
-        <h3>二、零件明细（按柜体分拣）</h3>
-        <div v-for="[cab, list] in cabinetGroups" :key="cab" class="avoid-break">
-          <h4>柜体/房间：{{ cab }}（{{ list.reduce((a, r) => a + r.qty, 0) }} 件）</h4>
+        <h3>二、零件明细（按柜体分拣，柜内按件号并数量）</h3>
+        <div v-for="g in cabinetGroups" :key="g.cabinet" class="avoid-break">
+          <h4>柜体/房间：{{ g.cabinet }}（{{ g.qty }} 件）</h4>
           <table class="pgrid">
             <thead>
               <tr><th>编号</th><th>名称</th><th>尺寸(mm)</th><th>数量</th><th>纹理</th><th>封边</th><th>见光</th></tr>
             </thead>
             <tbody>
-              <tr v-for="g in list" :key="g.code">
-                <td>{{ g.code }}</td>
-                <td>{{ g.name }}</td>
-                <td>{{ mm(g.origLen) }}×{{ mm(g.origWid) }}</td>
-                <td>{{ g.qty }}</td>
-                <td>{{ grainText(g.grain) }}</td>
-                <td>{{ g.edgeCount }} 边</td>
-                <td>{{ g.exposed ? '是' : '' }}</td>
+              <tr v-for="row in g.rows" :key="g.cabinet + '|' + row.code">
+                <td>{{ row.code }}</td>
+                <td>{{ row.name }}</td>
+                <td>{{ mm(row.origLen) }}×{{ mm(row.origWid) }}</td>
+                <td>{{ row.qty }}</td>
+                <td>{{ grainText(row.grain) }}</td>
+                <td>{{ row.edgeBands.length }} 边</td>
+                <td>{{ row.exposed ? '是' : '' }}</td>
               </tr>
             </tbody>
           </table>
         </div>
+        <p class="doc-meta">
+          合计 {{ pieces }} 件零件，净面积 {{ areaM2(partAreaMm2) }}
+          （各柜件数之和 = 标签张数 = 排样就位件数）。
+        </p>
 
         <h3>三、封边与五金辅料</h3>
         <table class="pgrid">
           <tbody>
-            <tr><td>见光边封边</td><td>{{ job.result?.edgeBandM.exposed }} m</td></tr>
-            <tr><td>非见光边封边</td><td>{{ job.result?.edgeBandM.normal }} m</td></tr>
-            <tr><td>{{ boardsData.hardware.connectorName }}</td><td>{{ allInstances.length * boardsData.hardware.connectorPerPart }}</td></tr>
-            <tr><td>{{ boardsData.hardware.dowelName }}</td><td>{{ allInstances.length * boardsData.hardware.dowelPerPart }}</td></tr>
-            <tr><td>{{ boardsData.hardware.screwName }}</td><td>{{ allInstances.length * boardsData.hardware.screwPerPart }}</td></tr>
-            <tr>
-              <td>{{ boardsData.hardware.glueName }}</td>
-              <td>{{ ((((job.result?.edgeBandM.exposed ?? 0) + (job.result?.edgeBandM.normal ?? 0)) * boardsData.hardware.glueGramPerEdgeMeter) / 1000).toFixed(2) }}</td>
+            <tr><td>见光边封边</td><td>{{ meters(edge.exposed) }} m</td></tr>
+            <tr><td>非见光边封边</td><td>{{ meters(edge.normal) }} m</td></tr>
+            <tr><td>封边合计</td><td>{{ meters(edge.total) }} m</td></tr>
+            <tr v-for="(h, i) in hardware" :key="i">
+              <td>{{ h.name }}</td>
+              <td>{{ h.amount.toFixed(h.decimals) }}{{ h.unit ? ' ' + h.unit : '' }}</td>
             </tr>
           </tbody>
+        </table>
+        <p class="doc-meta">
+          封边热熔胶 ＝ 封边合计 {{ meters(edge.total) }}m × {{ GLUE_GRAM_PER_EDGE_METER }} 克/米 ÷ 1000
+          （折算系数统计页、下料单、标签共用同一份）。
+        </p>
+
+        <h3>四、可再利用余料（≥300×300mm，每张板均计入）</h3>
+        <table class="pgrid">
+          <thead>
+            <tr><th>所在板</th><th>尺寸(mm)</th><th>面积</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(o, i) in usable.list" :key="i">
+              <td>第 {{ o.sheet }} 张</td>
+              <td>{{ mm(o.wMm) }}×{{ mm(o.hMm) }}</td>
+              <td>{{ areaM2(o.areaMm2) }}</td>
+            </tr>
+            <tr v-if="usable.list.length === 0">
+              <td colspan="3">本批板没有 ≥300×300mm 的可用余料。</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2">合计 {{ usable.count }} 块</td>
+              <td>{{ areaM2(usable.areaMm2) }}</td>
+            </tr>
+          </tfoot>
         </table>
       </section>
     </div>

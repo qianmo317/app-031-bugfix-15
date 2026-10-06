@@ -11,7 +11,8 @@ import {
 } from '../lib/store'
 import { runSelfTest, type SelfTestReport } from '../lib/selftest'
 import { toast } from '../lib/ui'
-import { pct, money } from '../lib/format'
+import { pct, money, meters } from '../lib/format'
+import { overallUtilization, totalEdgeMeters } from '../lib/stats'
 
 const router = useRouter()
 const { state } = useStore()
@@ -163,8 +164,7 @@ function onFile(e: Event): void {
         <div v-if="job.result" class="job-stats">
           <div><b>{{ job.result.boardsUsed }}</b><span>用板（张）</span></div>
           <div>
-            <b>{{ pct(job.result.sheets.reduce((a, s) => a + s.usedAreaMm2, 0) /
-              job.result.sheets.reduce((a, s) => a + s.boardAreaMm2, 0)) }}</b>
+            <b>{{ pct(overallUtilization(job.result)) }}</b>
             <span>综合利用率</span>
           </div>
           <div>
@@ -174,7 +174,7 @@ function onFile(e: Event): void {
         </div>
         <p v-if="job.result" class="small muted" style="margin: 6px 0 10px">
           约省 {{ money(job.result.savedCents) }} ｜ 封边
-          {{ (job.result.edgeBandM.exposed + job.result.edgeBandM.normal).toFixed(1) }}m
+          {{ meters(totalEdgeMeters(job.result).total) }}m
         </p>
         <div v-else style="height: 34px"></div>
         <div class="row">
