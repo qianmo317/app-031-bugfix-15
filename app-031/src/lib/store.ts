@@ -5,6 +5,7 @@ import { nestJob } from './packing'
 import { rebuildFromPlacements } from './cuts'
 import { guillotineViolation } from './geometry'
 import { uid } from './format'
+import { normalizeResult, OFFCUT_MIN_MM } from './stats'
 import boardsData from '../data/boards.json'
 
 const JOBS_KEY = 'fco.jobs.v1'
@@ -43,6 +44,10 @@ function init(): void {
   if (state.loaded) return
   state.jobs = load<Job[]>(JOBS_KEY, [])
   state.offcuts = load<RegisteredOffcut[]>(OFFCUTS_KEY, [])
+  // 兼容早先版本存下的排样结果：缺可用余料 / 已微调等字段时按默认值补齐接着算
+  for (const job of state.jobs) {
+    if (job.result) normalizeResult(job.result, { kerfMm: job.kerfMm, trimMm: job.trimMm })
+  }
   state.loaded = true
 }
 
@@ -186,7 +191,7 @@ export function applyAdjustment(
   )
   if (!rebuilt) return '调整后无法生成可执行的贯通裁切刀路'
   const offcuts = rebuilt.leftovers
-    .filter((r) => r.w >= 300 - 0.05 && r.h >= 300 - 0.05)
+    .filter((r) => r.w >= OFFCUT_MIN_MM - 0.05 && r.h >= OFFCUT_MIN_MM - 0.05)
     .map((r) => ({
       x: Math.round(r.x),
       y: Math.round(r.y),

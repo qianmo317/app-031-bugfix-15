@@ -4,20 +4,37 @@ export function uid(prefix = 'id'): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+/**
+ * 全单统一的数字写法（统计页 / 下料单 / 标签 / 排样页同一套，不许各写一套）：
+ * - 金额：内部以「分」整数记账，展示换算为元并固定保留 2 位小数（¥138.00）。
+ * - 尺寸：以毫米为单位，四舍五入取整（无小数），如 2440×1220。
+ * - 面积：内部按平方毫米累计，展示折成平方米并保留 2 位小数，如 2.98m²。
+ * - 百分比：利用率按小数保存（0.832），展示四舍五入保留 1 位小数，如 83.2%。
+ */
+
+/** 金额：分（整数）→ ¥元，固定两位小数。 */
 export function money(cents: number): string {
-  return `¥${cents / 100}`
+  return `¥${(Math.round(cents) / 100).toFixed(2)}`
 }
 
+/** 尺寸：毫米，四舍五入取整（无小数位）。 */
 export function mm(v: number): string {
-  return `${v.toFixed(2)}`
+  return `${Math.round(v)}`
 }
 
+/** 面积：平方毫米 → 平方米，保留两位小数（内部始终以 mm² 累计）。 */
 export function areaM2(mm2: number): string {
-  return `${mm2 / 1_000_000}m²`
+  return `${(mm2 / 1_000_000).toFixed(2)}m²`
 }
 
+/** 百分比：传入 0~1 的利用率，保留一位小数。 */
 export function pct(v: number): string {
-  return `${v * 100}%`
+  return `${(v * 100).toFixed(1)}%`
+}
+
+/** 封边长度：米，保留两位小数（封边以毫米逐边累计后折算）。 */
+export function meters(m: number): string {
+  return `${m.toFixed(2)} m`
 }
 
 export function clamp(v: number, lo: number, hi: number): number {

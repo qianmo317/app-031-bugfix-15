@@ -15,6 +15,7 @@ import type {
 import { EPS, type Rect } from './geometry'
 import { buildSteps, simulate } from './cuts'
 import type { DSeg } from './cuts'
+import { edgeBandMeters, OFFCUT_MIN_MM } from './stats'
 
 interface Inst {
   part: Part
@@ -345,20 +346,8 @@ export function nestJob(job: Job): NestResult {
     boardsByType[s.boardName] = (boardsByType[s.boardName] ?? 0) + 1
     totalCost += s.priceCents
   }
-  let exposedM = 0
-  let normalM = 0
-  for (const s of results) {
-    for (const pl of s.placements) {
-      const m =
-        (pl.origLen *
-          ((pl.edgeBands.includes('top') ? 1 : 0) + (pl.edgeBands.includes('bottom') ? 1 : 0)) +
-          pl.origWid *
-            ((pl.edgeBands.includes('left') ? 1 : 0) + (pl.edgeBands.includes('right') ? 1 : 0))) /
-        1000
-      if (pl.exposed) exposedM += m
-      else normalM += m
-    }
-  }
+  // 封边米数：逐边累计的算法与统计页/下料单共用同一份（stats.edgeBandMeters）
+  const edgeBand = edgeBandMeters(results.flatMap((s) => s.placements))
 
   const unplacedList: UnplacedInfo[] = [...unplaced.values()].map((u) => ({
     partId: u.part.id,
@@ -396,10 +385,7 @@ export function nestJob(job: Job): NestResult {
     sheets: results,
     boardsUsed: optimizedBoards,
     boardsByType,
-    edgeBandM: {
-      exposed: Math.round(exposedM * 100) / 100,
-      normal: Math.round(normalM * 100) / 100
-    },
+    edgeBandM: edgeBand,
     unplaced: unplacedList,
     baselineBoards,
     savedBoards,
@@ -440,7 +426,7 @@ function buildSheet(s: SheetState, kerf: number, trim: number): SheetResult {
       wMm: Math.round(f.w),
       hMm: Math.round(f.h),
       areaMm2: Math.round(f.w * f.h),
-      usable: f.w >= 300 - EPS && f.h >= 300 - EPS
+      usable: f.w >= OFFCUT_MIN_MM - EPS && f.h >= OFFCUT_MIN_MM - EPS
     }))
     .sort((a, c) => c.areaMm2 - a.areaMm2)
 

@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { getJob, runNest, applyAdjustment, registerOffcuts, useStore } from '../lib/store'
 import { toast } from '../lib/ui'
 import { printJob } from '../lib/print'
-import { pct, money } from '../lib/format'
+import { pct, money, areaM2 } from '../lib/format'
 import SheetDiagram from '../components/SheetDiagram.vue'
 import { cabinetFill, cabinetStroke } from '../lib/colors'
 
@@ -146,7 +146,7 @@ function printNest(): void {
     <section class="panel kpi-bar">
       <div><b>{{ result.boardsUsed }}</b><span>板材（张）</span></div>
       <div><b>{{ pct(overallUtil) }}</b><span>综合利用率</span></div>
-      <div><b>{{ (result.edgeBandM.exposed + result.edgeBandM.normal).toFixed(1) }}m</b><span>封边总长</span></div>
+      <div><b>{{ (result.edgeBandM.exposed + result.edgeBandM.normal).toFixed(2) }}m</b><span>封边总长</span></div>
       <div class="hl"><b>省 {{ result.savedBoards }} 张</b><span>约 {{ money(result.savedCents) }}</span></div>
       <div class="spacer" />
       <button class="sm" @click="rerun">重新排样</button>
@@ -242,7 +242,7 @@ function printNest(): void {
           :key="i"
           class="oc-row"
         >
-          <span>{{ o.wMm }}×{{ o.hMm }}mm · {{ (o.areaMm2 / 1e6).toFixed(2) }}m²</span>
+          <span>{{ o.wMm }}×{{ o.hMm }}mm · {{ areaM2(o.areaMm2) }}</span>
           <span v-if="registered(sheet!.index, o)" class="tag good">已登记</span>
         </div>
         <button class="sm" style="margin-top: 8px" @click="registerSheet(sheet!.index)">

@@ -174,7 +174,7 @@ function onFile(e: Event): void {
         </div>
         <p v-if="job.result" class="small muted" style="margin: 6px 0 10px">
           约省 {{ money(job.result.savedCents) }} ｜ 封边
-          {{ (job.result.edgeBandM.exposed + job.result.edgeBandM.normal).toFixed(1) }}m
+          {{ (job.result.edgeBandM.exposed + job.result.edgeBandM.normal).toFixed(2) }}m
         </p>
         <div v-else style="height: 34px"></div>
         <div class="row">

@@ -9,7 +9,7 @@ import {
   newPart,
   allStockTemplates
 } from '../lib/store'
-import { uid, parsePartText, parseEdges, money } from '../lib/format'
+import { uid, parsePartText, parseEdges, money, areaM2 } from '../lib/format'
 import { toast } from '../lib/ui'
 import type { Board, EdgeSide, Part } from '../types'
 
@@ -37,8 +37,8 @@ const edgeDefs: { key: EdgeSide; label: string }[] = [
 ]
 
 const totalPieces = computed(() => job.value?.parts.reduce((a, p) => a + (p.qty || 0), 0) ?? 0)
-const totalArea = computed(
-  () => (job.value?.parts.reduce((a, p) => a + p.lenMm * p.widMm * p.qty, 0) ?? 0) / 1e6
+const totalAreaMm2 = computed(() =>
+  job.value ? job.value.parts.reduce((a, p) => a + p.lenMm * p.widMm * p.qty, 0) : 0
 )
 
 const availableOffcuts = computed(() => state.offcuts.filter((o) => o.available))
@@ -273,7 +273,7 @@ const sampleTsv = `名称\t长\t宽\t数量\t纹理\t封边\t柜体\t见光
     <section class="panel">
       <div class="row" style="margin-bottom: 8px">
         <h3 style="font-size: 14px">零件清单</h3>
-        <span class="tag">{{ job.parts.length }} 种 / {{ totalPieces }} 件 / {{ totalArea.toFixed(2) }}m²</span>
+        <span class="tag">{{ job.parts.length }} 种 / {{ totalPieces }} 件 / {{ areaM2(totalAreaMm2) }}</span>
         <div class="spacer" />
         <button class="sm" @click="importOpen = !importOpen">批量粘贴导入</button>
         <button class="sm primary" @click="addPart">＋ 添加零件</button>
@@ -354,7 +354,7 @@ const sampleTsv = `名称\t长\t宽\t数量\t纹理\t封边\t柜体\t见光
     </section>
 
     <div class="sticky-bar no-print">
-      <span>{{ job.parts.length }} 种 / {{ totalPieces }} 件 · 总面积 {{ totalArea.toFixed(2) }}m²</span>
+      <span>{{ job.parts.length }} 种 / {{ totalPieces }} 件 · 总面积 {{ areaM2(totalAreaMm2) }}</span>
       <div class="spacer" />
       <router-link :to="`/`">返回列表</router-link>
       <button class="primary" :disabled="running" @click="doNest">
